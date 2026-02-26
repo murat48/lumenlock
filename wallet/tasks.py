@@ -23,7 +23,9 @@ def execute_scheduled_transfer(self, transfer_id):
     except ScheduledTransfer.DoesNotExist:
         return {'status': 'error', 'message': 'Transfer not found'}
 
-    if transfer.status != 'pending':
+    # Allow re-entry for retries: the first attempt transitions pending→processing.
+    # A crashed worker leaves the transfer in 'processing', which is also resumable.
+    if transfer.status not in ('pending', 'processing'):
         return {'status': 'skipped', 'message': f'Transfer already {transfer.status}'}
 
     try:
@@ -33,6 +35,18 @@ def execute_scheduled_transfer(self, transfer_id):
 
         source_keypair = Keypair.from_secret(raw_seed)
         server = Server("https://horizon-testnet.stellar.org")
+
+        # Mark as 'processing' before the network call so that if the worker
+        # crashes after submit_transaction but before the status update, the
+        # retry will still proceed (status is not 'pending' but 'processing').
+        from django.db import transaction as db_transaction
+        with db_transaction.atomic():
+            updated = type(transfer).objects.filter(
+                id=transfer.id, status__in=('pending', 'processing')
+            ).update(status='processing')
+        if not updated:
+            return {'status': 'skipped', 'message': 'Concurrent worker already claimed this transfer'}
+        transfer.status = 'processing'
 
         builder = TransactionBuilder(
             source_account=server.load_account(source_keypair.public_key),
@@ -56,8 +70,8 @@ def execute_scheduled_transfer(self, transfer_id):
         return {'status': 'success'}
 
     except Exception as exc:
-        # Only mark as failed once all retries are exhausted; otherwise the
-        # status != 'pending' guard above would prevent the retry from running.
+        # Only mark as failed once all retries are exhausted; otherwise leave
+        # the status as 'processing' so subsequent retries can proceed.
         if self.request.retries >= self.max_retries:
             transfer.status = 'failed'
             transfer.save()

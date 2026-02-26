@@ -18,15 +18,22 @@ def execute_due_transfers():
     from .models import ScheduledTransfer
 
     # Atomically claim each due transfer by transitioning it to 'processing'.
-    # select_for_update(skip_locked=True) ensures that concurrent scheduler
-    # instances skip rows already locked by another process, preventing
-    # double-execution.
+    # select_for_update(skip_locked=True) prevents concurrent scheduler instances
+    # from picking the same row. SQLite does not support skip_locked, so we fall
+    # back to a plain select_for_update (still atomic, just not skip-locked).
+    db_engine = settings.DATABASES.get('default', {}).get('ENGINE', '')
+    use_skip_locked = 'sqlite' not in db_engine
+
     with db_transaction.atomic():
-        due = ScheduledTransfer.objects.select_for_update(skip_locked=True).filter(
+        qs = ScheduledTransfer.objects.filter(
             status='pending',
             scheduled_at__lte=timezone.now(),
         )
-        claimed_ids = list(due.values_list('id', flat=True))
+        if use_skip_locked:
+            qs = qs.select_for_update(skip_locked=True)
+        else:
+            qs = qs.select_for_update()
+        claimed_ids = list(qs.values_list('id', flat=True))
         if claimed_ids:
             ScheduledTransfer.objects.filter(id__in=claimed_ids).update(status='processing')
 

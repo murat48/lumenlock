@@ -80,13 +80,25 @@ def bulk_send(request):
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
 
-    data = json.loads(request.body)
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'status': 'error', 'message': 'Invalid JSON body'}, status=400)
+
     recipients = data.get('recipients', [])  # [{"address": "...", "amount": "..."}]
     encryption_key = data.get('transaction_password')
     memo = data.get('memo', '').strip()
 
     if not recipients:
         return JsonResponse({'status': 'error', 'message': 'No recipients provided'}, status=400)
+
+    # Stellar transactions are capped at 100 operations
+    MAX_RECIPIENTS = 100
+    if len(recipients) > MAX_RECIPIENTS:
+        return JsonResponse(
+            {'status': 'error', 'message': f'Too many recipients: max {MAX_RECIPIENTS} per transaction'},
+            status=400,
+        )
 
     # Validate each recipient object before hitting the network
     for i, r in enumerate(recipients):
@@ -152,7 +164,11 @@ def schedule_transfer(request):
     if request.method != 'POST':
         return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
 
-    data = json.loads(request.body)
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({'status': 'error', 'message': 'Invalid JSON body'}, status=400)
+
     recipient = data.get('recipient')
     amount = data.get('amount')
     memo = data.get('memo', '').strip()
@@ -162,6 +178,8 @@ def schedule_transfer(request):
     # Validate required fields before any DB work
     if not recipient or not str(recipient).strip():
         return JsonResponse({'status': 'error', 'message': 'recipient is required'}, status=400)
+    if not StrKey.is_valid_ed25519_public_key(str(recipient)):
+        return JsonResponse({'status': 'error', 'message': 'Invalid Stellar recipient address'}, status=400)
     if not amount and amount != 0:
         return JsonResponse({'status': 'error', 'message': 'amount is required'}, status=400)
     try:
