@@ -31,6 +31,7 @@ class ScheduledTransfer(models.Model):
     tx_hash = models.CharField(max_length=64, blank=True,
         help_text='Stellar transaction hash once submitted; used to prevent duplicate sends.')
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f'{self.user.username} -> {self.recipient} ({self.amount} XLM) @ {self.scheduled_at}'
