@@ -48,6 +48,14 @@ def execute_scheduled_transfer(self, transfer_id):
             return {'status': 'skipped', 'message': 'Concurrent worker already claimed this transfer'}
         transfer.status = 'processing'
 
+        # Idempotency guard: if tx_hash is already set the payment was submitted
+        # on a previous attempt (worker crashed after submit but before the
+        # 'completed' save).  Skip re-submission to prevent a double-send.
+        if transfer.tx_hash:
+            transfer.status = 'completed'
+            transfer.save(update_fields=['status'])
+            return {'status': 'success', 'message': 'Already submitted on a previous attempt'}
+
         builder = TransactionBuilder(
             source_account=server.load_account(source_keypair.public_key),
             network_passphrase=Network.TESTNET_NETWORK_PASSPHRASE,
@@ -63,10 +71,16 @@ def execute_scheduled_transfer(self, transfer_id):
 
         transaction = builder.build()
         transaction.sign(source_keypair)
-        server.submit_transaction(transaction)
+        response = server.submit_transaction(transaction)
+
+        # Persist the hash BEFORE marking completed.  If the worker crashes
+        # between these two saves, the next retry will see the hash and skip
+        # re-submission, then mark the transfer completed cleanly.
+        transfer.tx_hash = response.get('hash', '')
+        transfer.save(update_fields=['tx_hash'])
 
         transfer.status = 'completed'
-        transfer.save()
+        transfer.save(update_fields=['status'])
         return {'status': 'success'}
 
     except Exception as exc:

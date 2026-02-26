@@ -15,6 +15,7 @@ class Wallet(models.Model):
 class ScheduledTransfer(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),
+        ('processing', 'Processing'),
         ('completed', 'Completed'),
         ('failed', 'Failed'),
         ('cancelled', 'Cancelled'),
@@ -27,6 +28,8 @@ class ScheduledTransfer(models.Model):
     encrypted_seed = models.CharField(max_length=512)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     celery_task_id = models.CharField(max_length=255, blank=True)
+    tx_hash = models.CharField(max_length=64, blank=True,
+        help_text='Stellar transaction hash once submitted; used to prevent duplicate sends.')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

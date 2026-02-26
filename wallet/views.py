@@ -9,9 +9,45 @@ import requests
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect
 import json
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 import datetime
+
+
+def _stellar_amount(value):
+    """Validate and normalise a value into a Stellar-compatible fixed-point string.
+
+    Stellar amounts must be positive and have at most 7 decimal places.
+    Using Decimal avoids the float precision/scientific-notation pitfalls that
+    cause str(float) to emit '1e-07' or excess decimal places.
+    Raises ValueError with a human-readable message on invalid input.
+    """
+    try:
+        d = Decimal(str(value)).normalize()
+    except InvalidOperation:
+        raise ValueError('Amount must be a valid number')
+    if d <= 0:
+        raise ValueError('Amount must be positive')
+    quantized = d.quantize(Decimal('0.0000001'), rounding=ROUND_DOWN)
+    if quantized <= 0:
+        raise ValueError('Amount is too small (minimum 0.0000001 XLM)')
+    return str(quantized)
+
+
+def _truncate_memo_bytes(memo, max_bytes=28):
+    """Truncate a memo string to at most *max_bytes* UTF-8 bytes.
+
+    Stellar's TextMemo limit is 28 *bytes*, not characters.  A naive char-slice
+    can produce a value that is >28 bytes when the string contains multi-byte
+    (non-ASCII) characters.  This helper truncates conservatively and never
+    splits a multi-byte sequence.
+    """
+    encoded = memo.encode('utf-8')
+    if len(encoded) <= max_bytes:
+        return memo
+    # Slice at the byte boundary then decode, discarding any partial sequence.
+    return encoded[:max_bytes].decode('utf-8', errors='ignore')
 
 def home(request):
     return render(request, 'home.html')
@@ -65,7 +101,7 @@ def send_money(request):
             asset=Asset.native()
         ).set_timeout(30)
         if memo:
-            builder.add_text_memo(memo[:28])
+            builder.add_text_memo(_truncate_memo_bytes(memo))
         transaction = builder.build()
         transaction.sign(source_keypair)
         response = server.submit_transaction(transaction)
@@ -118,11 +154,10 @@ def bulk_send(request):
                 status=400,
             )
         try:
-            if float(r['amount']) <= 0:
-                raise ValueError()
-        except (TypeError, ValueError):
+            r['_amount_str'] = _stellar_amount(r['amount'])
+        except ValueError as e:
             return JsonResponse(
-                {'status': 'error', 'message': f'Recipient {i} amount must be a positive number'},
+                {'status': 'error', 'message': f'Recipient {i} amount: {e}'},
                 status=400,
             )
 
@@ -147,12 +182,12 @@ def bulk_send(request):
         for r in recipients:
             builder.append_payment_op(
                 destination=r['address'],
-                amount=str(r['amount']),
+                amount=r['_amount_str'],
                 asset=Asset.native(),
             )
 
         if memo:
-            builder.add_text_memo(memo[:28])
+            builder.add_text_memo(_truncate_memo_bytes(memo))
 
         transaction = builder.build()
         transaction.sign(source_keypair)
@@ -187,10 +222,9 @@ def schedule_transfer(request):
     if not amount and amount != 0:
         return JsonResponse({'status': 'error', 'message': 'amount is required'}, status=400)
     try:
-        if float(amount) <= 0:
-            raise ValueError()
-    except (TypeError, ValueError):
-        return JsonResponse({'status': 'error', 'message': 'amount must be a positive number'}, status=400)
+        amount_str = _stellar_amount(amount)
+    except ValueError as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
     if not scheduled_at_str:
         return JsonResponse({'status': 'error', 'message': 'scheduled_at is required'}, status=400)
 
@@ -219,8 +253,8 @@ def schedule_transfer(request):
     transfer = ScheduledTransfer.objects.create(
         user=request.user,
         recipient=recipient,
-        amount=str(amount),
-        memo=memo[:28],
+        amount=amount_str,
+        memo=_truncate_memo_bytes(memo),
         scheduled_at=scheduled_at,
         encrypted_seed=server_encrypted_seed,
     )
