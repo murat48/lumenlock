@@ -1,4 +1,5 @@
 import logging
+import uuid as _uuid
 from apscheduler.schedulers.background import BackgroundScheduler
 from django.conf import settings
 
@@ -26,19 +27,22 @@ def execute_due_transfers():
     now = timezone.now()
 
     if is_sqlite:
-        # SQLite serializes all writes, so an atomic filter-then-update is safe
-        # without any row-level locking (which SQLite does not support at all).
+        # SQLite serialises writes, but claimed_ids would be the same for two
+        # concurrent readers if they both read before either updates.  Using a
+        # per-run UUID as a claim token stored in celery_task_id guarantees we
+        # can identify *exactly* the rows this scheduler instance updated.
+        claim_token = f'sched:{_uuid.uuid4().hex}'
         with db_transaction.atomic():
+            ScheduledTransfer.objects.filter(
+                status='pending',
+                scheduled_at__lte=now,
+            ).update(status='processing', celery_task_id=claim_token)
             claimed_ids = list(
                 ScheduledTransfer.objects.filter(
-                    status='pending',
-                    scheduled_at__lte=now,
+                    status='processing',
+                    celery_task_id=claim_token,
                 ).values_list('id', flat=True)
             )
-            if claimed_ids:
-                ScheduledTransfer.objects.filter(
-                    id__in=claimed_ids, status='pending'
-                ).update(status='processing')
     else:
         # PostgreSQL / MySQL: use select_for_update(skip_locked=True) so that
         # concurrent scheduler instances each claim a disjoint set of rows.

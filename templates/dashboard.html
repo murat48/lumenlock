@@ -234,7 +234,7 @@
       <input type="text" id="schedMemo" placeholder="e.g. subscription" class="input input-bordered" maxlength="28" />
     </div>
     <div class="form-control mt-2">
-      <label class="label"><span class="label-text">Send At (UTC)</span></label>
+      <label class="label"><span class="label-text">Send At (your local time)</span></label>
       <input type="datetime-local" id="schedAt" class="input input-bordered" />
     </div>
     <div class="form-control mt-2">
@@ -450,10 +450,14 @@
     const recipient = document.getElementById('schedRecipient').value;
     const amount = document.getElementById('schedAmount').value;
     const memo = document.getElementById('schedMemo').value;
-    const scheduledAt = document.getElementById('schedAt').value;
+    const schedAtRaw = document.getElementById('schedAt').value;
     const password = document.getElementById('schedPassword').value;
     const btn = document.getElementById('sched_btn');
-    if (!scheduledAt) { alert('Please select a date and time.'); return; }
+    if (!schedAtRaw) { alert('Please select a date and time.'); return; }
+    // datetime-local gives a local-time string with no timezone info.
+    // new Date(str) parses it as local time; .toISOString() converts to UTC ISO
+    // so the server always receives an unambiguous UTC timestamp.
+    const scheduledAt = new Date(schedAtRaw).toISOString();
     btn.disabled = true;
     fetch("{% url 'schedule_transfer' %}", {
       method: 'POST',

@@ -119,8 +119,7 @@ def send_money(request):
         transaction.sign(source_keypair)
         response = server.submit_transaction(transaction)
         return JsonResponse({'message': 'Payment sent successfully', 'status': 'success'})
-    else:
-        pass
+    return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
 
 
 @login_required
