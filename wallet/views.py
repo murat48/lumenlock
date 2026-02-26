@@ -251,14 +251,14 @@ def schedule_transfer(request):
 
     scheduled_at = parse_datetime(scheduled_at_str)
     if not scheduled_at:
-        return JsonResponse({'status': 'error', 'message': 'Invalid date/time format'})
+        return JsonResponse({'status': 'error', 'message': 'Invalid date/time format'}, status=400)
     if timezone.is_naive(scheduled_at):
         # The UI label says "Send At (UTC)"; always interpret naive input as UTC
         # regardless of the server's TIME_ZONE setting.
         scheduled_at = timezone.make_aware(scheduled_at, datetime.timezone.utc)
 
     if scheduled_at <= timezone.now():
-        return JsonResponse({'status': 'error', 'message': 'Scheduled time must be in the future'})
+        return JsonResponse({'status': 'error', 'message': 'Scheduled time must be in the future'}, status=400)
 
     from .tasks import _server_encrypt
     server_encrypted_seed = _server_encrypt(decrypted_seed)
@@ -304,10 +304,10 @@ def cancel_scheduled_transfer(request, transfer_id):
     try:
         transfer = ScheduledTransfer.objects.get(id=transfer_id, user=request.user)
     except ScheduledTransfer.DoesNotExist:
-        return JsonResponse({'status': 'error', 'message': 'Transfer not found'})
+        return JsonResponse({'status': 'error', 'message': 'Transfer not found'}, status=404)
 
     if transfer.status != 'pending':
-        return JsonResponse({'status': 'error', 'message': f'Cannot cancel a transfer with status: {transfer.status}'})
+        return JsonResponse({'status': 'error', 'message': f'Cannot cancel a transfer with status: {transfer.status}'}, status=409)
 
     transfer.status = 'cancelled'
     transfer.save(update_fields=['status'])
