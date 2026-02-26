@@ -85,7 +85,20 @@ def bulk_send(request):
     memo = data.get('memo', '').strip()
 
     if not recipients:
-        return JsonResponse({'status': 'error', 'message': 'No recipients provided'})
+        return JsonResponse({'status': 'error', 'message': 'No recipients provided'}, status=400)
+
+    # Validate each recipient object before hitting the network
+    for i, r in enumerate(recipients):
+        if not isinstance(r, dict) or 'address' not in r or 'amount' not in r:
+            return JsonResponse(
+                {'status': 'error', 'message': f'Recipient {i} is missing required fields: address, amount'},
+                status=400,
+            )
+        if not r['address'] or not str(r['amount']).strip():
+            return JsonResponse(
+                {'status': 'error', 'message': f'Recipient {i} has empty address or amount'},
+                status=400,
+            )
 
     wallet = Wallet.objects.filter(user=request.user).first()
     if not wallet:
@@ -94,10 +107,11 @@ def bulk_send(request):
     try:
         server = Server("https://horizon-testnet.stellar.org")
         source_keypair = Keypair.from_secret(cryptocode.decrypt(wallet.secret_seed, encryption_key))
+        # base_fee is a per-operation fee; do NOT multiply by recipient count.
         builder = TransactionBuilder(
             source_account=server.load_account(source_keypair.public_key),
             network_passphrase=Network.TESTNET_NETWORK_PASSPHRASE,
-            base_fee=100 * len(recipients),
+            base_fee=100,
         ).set_timeout(30)
 
         for r in recipients:
@@ -130,6 +144,19 @@ def schedule_transfer(request):
     memo = data.get('memo', '').strip()
     scheduled_at_str = data.get('scheduled_at')
     encryption_key = data.get('transaction_password')
+
+    # Validate required fields before any DB work
+    if not recipient or not str(recipient).strip():
+        return JsonResponse({'status': 'error', 'message': 'recipient is required'}, status=400)
+    if not amount and amount != 0:
+        return JsonResponse({'status': 'error', 'message': 'amount is required'}, status=400)
+    try:
+        if float(amount) <= 0:
+            raise ValueError()
+    except (TypeError, ValueError):
+        return JsonResponse({'status': 'error', 'message': 'amount must be a positive number'}, status=400)
+    if not scheduled_at_str:
+        return JsonResponse({'status': 'error', 'message': 'scheduled_at is required'}, status=400)
 
     wallet = Wallet.objects.filter(user=request.user).first()
     if not wallet:

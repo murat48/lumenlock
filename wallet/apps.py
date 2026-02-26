@@ -7,7 +7,10 @@ class WalletConfig(AppConfig):
 
     def ready(self):
         import os
-        # Avoid running twice in Django's autoreload (RUN_MAIN is set by the reloader child process)
-        if os.environ.get('RUN_MAIN') == 'true' or not os.environ.get('RUN_MAIN'):
+        # Only start the scheduler once: in the parent process (autoreload monitor)
+        # or in a non-autoreload environment (e.g. production/gunicorn).
+        # When autoreload is active Django sets RUN_MAIN='true' only in the child;
+        # the parent never sets it, so `not RUN_MAIN` is True only there.
+        if not os.environ.get('RUN_MAIN'):
             from . import scheduler
             scheduler.start()

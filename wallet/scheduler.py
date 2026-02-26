@@ -14,14 +14,26 @@ def execute_due_transfers():
     from stellar_sdk import Asset, Server, Keypair, TransactionBuilder, Network
     import cryptocode
 
+    from django.db import transaction as db_transaction
     from .models import ScheduledTransfer
 
-    due = ScheduledTransfer.objects.filter(
-        status='pending',
-        scheduled_at__lte=timezone.now(),
-    )
+    # Atomically claim each due transfer by transitioning it to 'processing'.
+    # select_for_update(skip_locked=True) ensures that concurrent scheduler
+    # instances skip rows already locked by another process, preventing
+    # double-execution.
+    with db_transaction.atomic():
+        due = ScheduledTransfer.objects.select_for_update(skip_locked=True).filter(
+            status='pending',
+            scheduled_at__lte=timezone.now(),
+        )
+        claimed_ids = list(due.values_list('id', flat=True))
+        if claimed_ids:
+            ScheduledTransfer.objects.filter(id__in=claimed_ids).update(status='processing')
 
-    for transfer in due:
+    if not claimed_ids:
+        return
+
+    for transfer in ScheduledTransfer.objects.filter(id__in=claimed_ids):
         try:
             raw_seed = cryptocode.decrypt(transfer.encrypted_seed, settings.SECRET_KEY[:32])
             if not raw_seed:

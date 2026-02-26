@@ -56,6 +56,9 @@ def execute_scheduled_transfer(self, transfer_id):
         return {'status': 'success'}
 
     except Exception as exc:
-        transfer.status = 'failed'
-        transfer.save()
+        # Only mark as failed once all retries are exhausted; otherwise the
+        # status != 'pending' guard above would prevent the retry from running.
+        if self.request.retries >= self.max_retries:
+            transfer.status = 'failed'
+            transfer.save()
         raise self.retry(exc=exc, countdown=60)
