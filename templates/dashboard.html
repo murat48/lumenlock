@@ -14,6 +14,14 @@
       Send Tokens
     </button>
 
+    <button class="btn btn-neutral" onclick="bulkSendModal.showModal()">
+      Bulk Transfer
+    </button>
+
+    <button class="btn btn-neutral" onclick="scheduleModal.showModal()">
+      Schedule Transfer
+    </button>
+
     <button class="btn btn-neutral" onclick="receiveModal.showModal()">
       Receive Tokens
     </button>
@@ -26,6 +34,53 @@
     {% endif %}
   </section>
 </main>
+
+{% if wallet_exists %}
+<!-- Transaction History Section -->
+<section class="container mx-auto py-8 font-[orbitron] z-10 mt-6 rounded-xl border border-[#FFE7A3] backdrop-blur">
+  <h2 class="text-2xl font-bold text-center mb-6">Transaction History</h2>
+  <div id="tx-loading" class="text-center py-4 text-sm opacity-60">Loading...</div>
+  <div id="tx-empty" class="text-center py-4 text-sm opacity-60 hidden">No transactions yet.</div>
+  <div class="overflow-x-auto px-4">
+    <table class="table table-zebra w-full text-xs" id="tx-table" style="display:none">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Amount (XLM)</th>
+          <th>From</th>
+          <th>To</th>
+          <th>Hash</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody id="tx-body"></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Scheduled Transfers Section -->
+<section class="container mx-auto py-8 font-[orbitron] z-10 mt-6 rounded-xl border border-[#FFE7A3] backdrop-blur">
+  <h2 class="text-2xl font-bold text-center mb-6">Scheduled Transfers</h2>
+  <div id="sched-loading" class="text-center py-4 text-sm opacity-60">Loading...</div>
+  <div id="sched-empty" class="text-center py-4 text-sm opacity-60 hidden">No scheduled transfers.</div>
+  <div class="overflow-x-auto px-4">
+    <table class="table table-zebra w-full text-xs" id="sched-table" style="display:none">
+      <thead>
+        <tr>
+          <th>Recipient</th>
+          <th>Amount (XLM)</th>
+          <th>Memo</th>
+          <th>Scheduled At</th>
+          <th>Created At</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="sched-body"></tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
 
 <!-- Create Wallet Modal -->
 <dialog id="createWalletModal" class="modal">
@@ -106,6 +161,18 @@
           required
         />
       </div>
+      <div class="form-control">
+        <label class="label">
+          <span class="label-text">Memo <span class="opacity-50 text-xs">(optional, max 28 chars)</span></span>
+        </label>
+        <input
+          type="text"
+          id="memo"
+          placeholder="e.g. exchange deposit tag"
+          class="input input-bordered"
+          maxlength="28"
+        />
+      </div>
       <div class="modal-footer flex justify-center my-2">
         <button
           onclick="sendTokens()"
@@ -120,6 +187,67 @@
   <form method="dialog" class="modal-backdrop">
     <button>close</button>
   </form>
+</dialog>
+
+<!-- Bulk Transfer Modal -->
+<dialog id="bulkSendModal" class="modal">
+  <div class="modal-box border border-2 border-neutral w-11/12 max-w-2xl">
+    <h3 class="text-lg font-semibold mb-4">Bulk Transfer</h3>
+    <div id="bulk-recipients">
+      <div class="bulk-row flex gap-2 mb-2">
+        <input type="text" placeholder="Recipient address" class="input input-bordered flex-1 bulk-address" />
+        <input type="number" placeholder="Amount" class="input input-bordered w-28 bulk-amount" step="0.0000001" min="0" />
+      </div>
+    </div>
+    <button class="btn btn-sm btn-outline mt-1" onclick="addBulkRow()">+ Add Recipient</button>
+    <div class="form-control mt-3">
+      <label class="label"><span class="label-text">Memo <span class="opacity-50 text-xs">(optional)</span></span></label>
+      <input type="text" id="bulkMemo" placeholder="e.g. batch payout" class="input input-bordered" maxlength="28" />
+    </div>
+    <div class="form-control mt-3">
+      <label class="label"><span class="label-text">Transaction Password</span></label>
+      <input type="password" id="bulkPassword" placeholder="Enter transaction password" class="input input-bordered" />
+    </div>
+    <div class="flex justify-center mt-4">
+      <button onclick="sendBulk()" class="btn btn-primary bg-white" id="bulk_btn">
+        <span class="bulk_btn_text">Send All</span>
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- Scheduled Transfer Modal -->
+<dialog id="scheduleModal" class="modal">
+  <div class="modal-box border border-2 border-neutral">
+    <h3 class="text-lg font-semibold mb-4">Schedule Transfer</h3>
+    <div class="form-control">
+      <label class="label"><span class="label-text">Recipient</span></label>
+      <input type="text" id="schedRecipient" placeholder="Recipient address" class="input input-bordered" />
+    </div>
+    <div class="form-control mt-2">
+      <label class="label"><span class="label-text">Amount (XLM)</span></label>
+      <input type="number" id="schedAmount" placeholder="Amount" class="input input-bordered" step="0.0000001" min="0" />
+    </div>
+    <div class="form-control mt-2">
+      <label class="label"><span class="label-text">Memo <span class="opacity-50 text-xs">(optional)</span></span></label>
+      <input type="text" id="schedMemo" placeholder="e.g. subscription" class="input input-bordered" maxlength="28" />
+    </div>
+    <div class="form-control mt-2">
+      <label class="label"><span class="label-text">Send At (UTC)</span></label>
+      <input type="datetime-local" id="schedAt" class="input input-bordered" />
+    </div>
+    <div class="form-control mt-2">
+      <label class="label"><span class="label-text">Transaction Password</span></label>
+      <input type="password" id="schedPassword" placeholder="Enter transaction password" class="input input-bordered" />
+    </div>
+    <div class="flex justify-center mt-4">
+      <button onclick="scheduleTransfer()" class="btn btn-primary bg-white" id="sched_btn">
+        <span class="sched_btn_text">Schedule</span>
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
 <dialog id="receiveModal" class="modal">
@@ -151,12 +279,63 @@
 </dialog>
 
 <script>
+  const WALLET_EXISTS = '{{ wallet_exists|yesno:"true,false"|escapejs }}' === 'true';
+  const CSRF_TOKEN = '{{ csrf_token|escapejs }}';
+
+  function truncate(str) {
+    if (!str) return '-';
+    return str.length > 12 ? str.slice(0, 6) + '...' + str.slice(-6) : str;
+  }
+
+  function loadTransactions() {
+    fetch("{% url 'transaction_history' %}")
+      .then(r => r.json())
+      .then(data => {
+        const loading = document.getElementById('tx-loading');
+        const empty = document.getElementById('tx-empty');
+        const table = document.getElementById('tx-table');
+        const tbody = document.getElementById('tx-body');
+        loading.style.display = 'none';
+        if (!data.transactions || data.transactions.length === 0) {
+          empty.classList.remove('hidden');
+          return;
+        }
+        tbody.innerHTML = '';
+        data.transactions.forEach(tx => {
+          const isSent = tx.type === 'sent';
+          const date = new Date(tx.date).toLocaleString('en-GB');
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td><span class="badge ${isSent ? 'badge-error' : 'badge-success'}">${isSent ? '&#8593; Sent' : '&#8595; Received'}</span></td>
+            <td class="font-bold">${parseFloat(tx.amount).toFixed(4)}</td>
+            <td title="${tx.from || ''}"><span class="font-mono">${truncate(tx.from)}</span></td>
+            <td title="${tx.to || ''}"><span class="font-mono">${truncate(tx.to)}</span></td>
+            <td>
+              <a href="https://stellar.expert/explorer/testnet/tx/${tx.hash}" target="_blank"
+                class="font-mono link link-accent" title="${tx.hash}">
+                ${truncate(tx.hash)}
+              </a>
+            </td>
+            <td>${date}</td>
+          `;
+          tbody.appendChild(row);
+        });
+        table.style.display = 'table';
+      })
+      .catch(() => {
+        document.getElementById('tx-loading').textContent = 'Failed to load transaction history.';
+      });
+  }
+
+  document.addEventListener('DOMContentLoaded', loadTransactions);
+
   function sendTokens() {
     const recipient = document.getElementById("recipient").value;
     const amount = document.getElementById("amount").value;
     const transactionPassword = document.getElementById(
       "transactionPassword"
     ).value;
+    const memo = document.getElementById("memo").value;
     const send_btn = document.getElementById("send_btn");
     const send_btn_text = document.querySelector(".send_btn_text");
 
@@ -167,13 +346,14 @@
       recipient: recipient,
       amount: amount,
       transaction_password: transactionPassword,
+      memo: memo,
     };
 
     fetch("{% url 'send_tokens' %}", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-CSRFToken": "{{ csrf_token }}",
+        "X-CSRFToken": CSRF_TOKEN,
       },
       body: JSON.stringify(data),
     })
@@ -209,6 +389,148 @@
         console.error("There was a problem with the fetch operation:", error);
       });
   }
+
+  function addBulkRow() {
+    const container = document.getElementById('bulk-recipients');
+    const row = document.createElement('div');
+    row.className = 'bulk-row flex gap-2 mb-2';
+    row.innerHTML = `
+      <input type="text" placeholder="Recipient address" class="input input-bordered flex-1 bulk-address" />
+      <input type="number" placeholder="Amount" class="input input-bordered w-28 bulk-amount" step="0.0000001" min="0" />
+      <button class="btn btn-sm btn-error" onclick="this.parentElement.remove()">✕</button>
+    `;
+    container.appendChild(row);
+  }
+
+  function sendBulk() {
+    const addresses = document.querySelectorAll('.bulk-address');
+    const amounts = document.querySelectorAll('.bulk-amount');
+    const recipients = [];
+    for (let i = 0; i < addresses.length; i++) {
+      const addr = addresses[i].value.trim();
+      const amt = amounts[i].value.trim();
+      if (addr && amt) recipients.push({ address: addr, amount: amt });
+    }
+    if (recipients.length === 0) { alert('Add at least one recipient.'); return; }
+    const password = document.getElementById('bulkPassword').value;
+    const memo = document.getElementById('bulkMemo').value;
+    const btn = document.getElementById('bulk_btn');
+    btn.disabled = true;
+    fetch("{% url 'bulk_send' %}", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+      body: JSON.stringify({ recipients, transaction_password: password, memo }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      Toastify({
+        text: data.status === 'success' ? data.message : 'Error: ' + data.message,
+        duration: 4000, close: true, gravity: 'top', position: 'center',
+        style: { background: data.status === 'success' ? 'linear-gradient(to right,#00b09b,#96c93d)' : 'linear-gradient(to right,#f00,#900)' },
+      }).showToast();
+      if (data.status === 'success') { bulkSendModal.close(); setTimeout(() => window.location.reload(), 1200); }
+    })
+    .catch(e => console.error(e))
+    .finally(() => { btn.disabled = false; });
+  }
+
+  function scheduleTransfer() {
+    const recipient = document.getElementById('schedRecipient').value;
+    const amount = document.getElementById('schedAmount').value;
+    const memo = document.getElementById('schedMemo').value;
+    const scheduledAt = document.getElementById('schedAt').value;
+    const password = document.getElementById('schedPassword').value;
+    const btn = document.getElementById('sched_btn');
+    if (!scheduledAt) { alert('Please select a date and time.'); return; }
+    btn.disabled = true;
+    fetch("{% url 'schedule_transfer' %}", {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+      body: JSON.stringify({ recipient, amount, memo, scheduled_at: scheduledAt, transaction_password: password }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      Toastify({
+        text: data.status === 'success' ? data.message : 'Error: ' + data.message,
+        duration: 5000, close: true, gravity: 'top', position: 'center',
+        style: { background: data.status === 'success' ? 'linear-gradient(to right,#00b09b,#96c93d)' : 'linear-gradient(to right,#f00,#900)' },
+      }).showToast();
+      if (data.status === 'success') { scheduleModal.close(); loadScheduledTransfers(); }
+    })
+    .catch(e => console.error(e))
+    .finally(() => { btn.disabled = false; });
+  }
+
+  function loadScheduledTransfers() {
+    fetch("{% url 'list_scheduled_transfers' %}")
+      .then(r => r.json())
+      .then(data => {
+        const loading = document.getElementById('sched-loading');
+        const empty = document.getElementById('sched-empty');
+        const table = document.getElementById('sched-table');
+        const tbody = document.getElementById('sched-body');
+        loading.style.display = 'none';
+        if (!data.transfers || data.transfers.length === 0) {
+          empty.classList.remove('hidden');
+          return;
+        }
+        tbody.innerHTML = '';
+        data.transfers.forEach(t => {
+          const statusColors = {
+            pending: 'badge-warning',
+            completed: 'badge-success',
+            failed: 'badge-error',
+            cancelled: 'badge-neutral',
+          };
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td class="font-mono" title="${t.recipient}">${t.recipient.slice(0,8)}...${t.recipient.slice(-6)}</td>
+            <td class="font-bold">${parseFloat(t.amount).toFixed(4)}</td>
+            <td>${t.memo || '<span class="opacity-40">—</span>'}</td>
+            <td>${t.scheduled_at}</td>
+            <td>${t.created_at}</td>
+            <td><span class="badge ${statusColors[t.status] || 'badge-ghost'}">${t.status}</span></td>
+            <td>
+              ${t.status === 'pending'
+                ? `<button onclick="cancelTransfer(${t.id}, this)" class="btn btn-xs btn-error">Cancel</button>`
+                : '<span class="opacity-30 text-xs">—</span>'}
+            </td>
+          `;
+          tbody.appendChild(row);
+        });
+        table.style.display = 'table';
+        empty.classList.add('hidden');
+      })
+      .catch(() => {
+        document.getElementById('sched-loading').textContent = 'Failed to load scheduled transfers.';
+      });
+  }
+
+  function cancelTransfer(transferId, btn) {
+    if (!confirm('Are you sure you want to cancel this scheduled transfer?')) return;
+    btn.disabled = true;
+    fetch(`/scheduled_transfers/${transferId}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+    })
+    .then(r => r.json())
+    .then(data => {
+      Toastify({
+        text: data.status === 'success' ? 'Transfer cancelled.' : 'Error: ' + data.message,
+        duration: 3000, close: true, gravity: 'top', position: 'center',
+        style: { background: data.status === 'success' ? 'linear-gradient(to right,#555,#333)' : 'linear-gradient(to right,#f00,#900)' },
+      }).showToast();
+      if (data.status === 'success') loadScheduledTransfers();
+    })
+    .catch(e => { console.error(e); btn.disabled = false; });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    if (WALLET_EXISTS) {
+      loadTransactions();
+      loadScheduledTransfers();
+    }
+  });
 </script>
 
 {% endblock main %}
