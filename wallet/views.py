@@ -87,7 +87,11 @@ def check_balance(request):
 @login_required
 def send_money(request):
     if request.method == 'POST':
-        data = json.loads(request.body)
+        try:
+            data = json.loads(request.body)
+        except (json.JSONDecodeError, ValueError):
+            return JsonResponse({'status': 'error', 'message': 'Invalid JSON body'}, status=400)
+        
         destination_public_key = data.get('recipient')
         amount = data.get('amount')
         encryption_key = data.get('transaction_password')
@@ -104,23 +108,28 @@ def send_money(request):
         raw_seed = cryptocode.decrypt(wallet.secret_seed, encryption_key)
         if not raw_seed:
             return JsonResponse({'status': 'error', 'message': 'Wrong transaction password'}, status=400)
-        server = Server("https://horizon-testnet.stellar.org")
-        source_keypair = Keypair.from_secret(raw_seed)
-        builder = TransactionBuilder(
-            source_account=server.load_account(source_keypair.public_key),
-            network_passphrase=Network.TESTNET_NETWORK_PASSPHRASE,
-            base_fee=100
-        ).append_payment_op(
-            destination=destination_public_key,
-            amount=amount_str,
-            asset=Asset.native()
-        ).set_timeout(30)
-        if memo:
-            builder.add_text_memo(_truncate_memo_bytes(memo))
-        transaction = builder.build()
-        transaction.sign(source_keypair)
-        response = server.submit_transaction(transaction)
-        return JsonResponse({'message': 'Payment sent successfully', 'status': 'success'})
+        
+        try:
+            server = Server("https://horizon-testnet.stellar.org")
+            source_keypair = Keypair.from_secret(raw_seed)
+            builder = TransactionBuilder(
+                source_account=server.load_account(source_keypair.public_key),
+                network_passphrase=Network.TESTNET_NETWORK_PASSPHRASE,
+                base_fee=100
+            ).append_payment_op(
+                destination=destination_public_key,
+                amount=amount_str,
+                asset=Asset.native()
+            ).set_timeout(30)
+            if memo:
+                builder.add_text_memo(_truncate_memo_bytes(memo))
+            transaction = builder.build()
+            transaction.sign(source_keypair)
+            server.submit_transaction(transaction)
+            return JsonResponse({'message': 'Payment sent successfully', 'status': 'success'})
+        except Exception as e:
+            logger.exception(f'send_money error for user {request.user.id}: {e}')
+            return JsonResponse({'status': 'error', 'message': 'An error occurred while processing your request'}, status=500)
     return JsonResponse({'status': 'error', 'message': 'Method not allowed'}, status=405)
 
 
