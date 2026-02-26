@@ -2,6 +2,9 @@ from celery import shared_task
 from stellar_sdk import Asset, Server, Keypair, TransactionBuilder, Network
 import cryptocode
 from django.conf import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _server_encrypt(seed):
@@ -23,10 +26,12 @@ def execute_scheduled_transfer(self, transfer_id):
     except ScheduledTransfer.DoesNotExist:
         return {'status': 'error', 'message': 'Transfer not found'}
 
-    # Allow re-entry for retries: the first attempt transitions pending→processing.
-    # A crashed worker leaves the transfer in 'processing', which is also resumable.
-    if transfer.status not in ('pending', 'processing'):
-        return {'status': 'skipped', 'message': f'Transfer already {transfer.status}'}
+    # Guard: do not execute if the scheduled time is in the future.
+    # This handles early enqueue (clock skew, misconfigured ETA/beat).
+    from django.utils import timezone
+    if transfer.scheduled_at > timezone.now():
+        # Reschedule: re-queue this task for the actual scheduled time.
+        raise self.retry(eta=transfer.scheduled_at)
 
     try:
         raw_seed = _server_decrypt(transfer.encrypted_seed)

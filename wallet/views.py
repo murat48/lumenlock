@@ -208,7 +208,8 @@ def bulk_send(request):
         server.submit_transaction(transaction)
         return JsonResponse({'status': 'success', 'message': f'{len(recipients)} payments sent successfully'})
     except Exception as e:
-        return JsonResponse({'status': 'error', 'message': str(e)})
+        logger.exception(f'bulk_send error for user {request.user.id}: {e}')
+        return JsonResponse({'status': 'error', 'message': 'An error occurred while processing your request'}, status=500)
 
 
 @login_required

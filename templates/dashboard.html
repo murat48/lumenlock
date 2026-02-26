@@ -457,7 +457,13 @@
     // datetime-local gives a local-time string with no timezone info.
     // new Date(str) parses it as local time; .toISOString() converts to UTC ISO
     // so the server always receives an unambiguous UTC timestamp.
-    const scheduledAt = new Date(schedAtRaw).toISOString();
+    const schedDate = new Date(schedAtRaw);
+    if (isNaN(schedDate.getTime())) {
+      alert('Invalid date/time. Please check your input.');
+      btn.disabled = false;
+      return;
+    }
+    const scheduledAt = schedDate.toISOString();
     btn.disabled = true;
     fetch("{% url 'schedule_transfer' %}", {
       method: 'POST',
