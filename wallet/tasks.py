@@ -45,10 +45,11 @@ def execute_scheduled_transfer(self, transfer_id):
         # crashes after submit_transaction but before the status update, the
         # retry will still proceed (status is not 'pending' but 'processing').
         from django.db import transaction as db_transaction
+        from django.utils import timezone
         with db_transaction.atomic():
             updated = type(transfer).objects.filter(
                 id=transfer.id, status__in=('pending', 'processing')
-            ).update(status='processing')
+            ).update(status='processing', updated_at=timezone.now())
         if not updated:
             return {'status': 'skipped', 'message': 'Concurrent worker already claimed this transfer'}
         transfer.status = 'processing'

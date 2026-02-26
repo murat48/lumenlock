@@ -48,7 +48,7 @@ def execute_due_transfers():
             ScheduledTransfer.objects.filter(
                 status='pending',
                 scheduled_at__lte=now,
-            ).update(status='processing', celery_task_id=claim_token)
+            ).update(status='processing', celery_task_id=claim_token, updated_at=now)
             claimed_ids = list(
                 ScheduledTransfer.objects.filter(
                     status='processing',
@@ -66,7 +66,7 @@ def execute_due_transfers():
                 ).values_list('id', flat=True)
             )
             if claimed_ids:
-                ScheduledTransfer.objects.filter(id__in=claimed_ids).update(status='processing')
+                ScheduledTransfer.objects.filter(id__in=claimed_ids).update(status='processing', updated_at=now)
 
     if not claimed_ids:
         return
