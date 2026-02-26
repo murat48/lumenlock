@@ -287,6 +287,16 @@
     return str.length > 12 ? str.slice(0, 6) + '...' + str.slice(-6) : str;
   }
 
+  /** Escape a value for safe insertion into HTML (prevents XSS). */
+  function escHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function loadTransactions() {
     fetch("{% url 'transaction_history' %}")
       .then(r => r.json())
@@ -304,16 +314,20 @@
         data.transactions.forEach(tx => {
           const isSent = tx.type === 'sent';
           const date = new Date(tx.date).toLocaleString('en-GB');
+          const txFrom = tx.from || '';
+          const txTo = tx.to || '';
           const row = document.createElement('tr');
+          // escHtml() prevents XSS from any unexpected upstream data in tx fields
           row.innerHTML = `
             <td><span class="badge ${isSent ? 'badge-error' : 'badge-success'}">${isSent ? '&#8593; Sent' : '&#8595; Received'}</span></td>
             <td class="font-bold">${parseFloat(tx.amount).toFixed(4)}</td>
-            <td title="${tx.from || ''}"><span class="font-mono">${truncate(tx.from)}</span></td>
-            <td title="${tx.to || ''}"><span class="font-mono">${truncate(tx.to)}</span></td>
+            <td title="${escHtml(txFrom)}"><span class="font-mono">${escHtml(truncate(txFrom))}</span></td>
+            <td title="${escHtml(txTo)}"><span class="font-mono">${escHtml(truncate(txTo))}</span></td>
             <td>
-              <a href="https://stellar.expert/explorer/testnet/tx/${tx.hash}" target="_blank"
-                class="font-mono link link-accent" title="${tx.hash}">
-                ${truncate(tx.hash)}
+              <a href="https://stellar.expert/explorer/testnet/tx/${escHtml(tx.hash)}" target="_blank"
+                rel="noopener noreferrer"
+                class="font-mono link link-accent" title="${escHtml(tx.hash)}">
+                ${escHtml(truncate(tx.hash))}
               </a>
             </td>
             <td>${date}</td>
@@ -482,14 +496,17 @@
             failed: 'badge-error',
             cancelled: 'badge-neutral',
           };
+          const statusColor = statusColors[t.status] || 'badge-ghost';
+          const truncRecipient = escHtml(t.recipient.slice(0, 8) + '...' + t.recipient.slice(-6));
           const row = document.createElement('tr');
+          // escHtml() prevents XSS from user-supplied memo/recipient data
           row.innerHTML = `
-            <td class="font-mono" title="${t.recipient}">${t.recipient.slice(0,8)}...${t.recipient.slice(-6)}</td>
+            <td class="font-mono" title="${escHtml(t.recipient)}">${truncRecipient}</td>
             <td class="font-bold">${parseFloat(t.amount).toFixed(4)}</td>
-            <td>${t.memo || '<span class="opacity-40">—</span>'}</td>
-            <td>${t.scheduled_at}</td>
-            <td>${t.created_at}</td>
-            <td><span class="badge ${statusColors[t.status] || 'badge-ghost'}">${t.status}</span></td>
+            <td>${t.memo ? escHtml(t.memo) : '<span class="opacity-40">—</span>'}</td>
+            <td>${escHtml(t.scheduled_at)}</td>
+            <td>${escHtml(t.created_at)}</td>
+            <td><span class="badge ${statusColor}">${escHtml(t.status)}</span></td>
             <td>
               ${t.status === 'pending'
                 ? `<button onclick="cancelTransfer(${t.id}, this)" class="btn btn-xs btn-error">Cancel</button>`

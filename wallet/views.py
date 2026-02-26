@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from django.http import JsonResponse
-from stellar_sdk import Asset, Server, Keypair, TransactionBuilder, Network, TextMemo
+from stellar_sdk import Asset, Server, Keypair, TransactionBuilder, Network, TextMemo, StrKey
 from .models import Wallet, ScheduledTransfer
 import cryptocode
 from django.contrib.auth.models import User
@@ -11,6 +11,7 @@ from django.shortcuts import redirect
 import json
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
+import datetime
 
 def home(request):
     return render(request, 'home.html')
@@ -99,6 +100,19 @@ def bulk_send(request):
                 {'status': 'error', 'message': f'Recipient {i} has empty address or amount'},
                 status=400,
             )
+        if not StrKey.is_valid_ed25519_public_key(str(r['address'])):
+            return JsonResponse(
+                {'status': 'error', 'message': f'Recipient {i} has an invalid Stellar address'},
+                status=400,
+            )
+        try:
+            if float(r['amount']) <= 0:
+                raise ValueError()
+        except (TypeError, ValueError):
+            return JsonResponse(
+                {'status': 'error', 'message': f'Recipient {i} amount must be a positive number'},
+                status=400,
+            )
 
     wallet = Wallet.objects.filter(user=request.user).first()
     if not wallet:
@@ -170,7 +184,9 @@ def schedule_transfer(request):
     if not scheduled_at:
         return JsonResponse({'status': 'error', 'message': 'Invalid date/time format'})
     if timezone.is_naive(scheduled_at):
-        scheduled_at = timezone.make_aware(scheduled_at)
+        # The UI label says "Send At (UTC)"; always interpret naive input as UTC
+        # regardless of the server's TIME_ZONE setting.
+        scheduled_at = timezone.make_aware(scheduled_at, datetime.timezone.utc)
 
     if scheduled_at <= timezone.now():
         return JsonResponse({'status': 'error', 'message': 'Scheduled time must be in the future'})
