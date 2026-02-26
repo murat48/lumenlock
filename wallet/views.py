@@ -130,9 +130,13 @@ def bulk_send(request):
     if not wallet:
         return JsonResponse({'status': 'error', 'message': 'Wallet not found'})
 
+    raw_seed = cryptocode.decrypt(wallet.secret_seed, encryption_key)
+    if not raw_seed:
+        return JsonResponse({'status': 'error', 'message': 'Wrong transaction password'}, status=400)
+
     try:
         server = Server("https://horizon-testnet.stellar.org")
-        source_keypair = Keypair.from_secret(cryptocode.decrypt(wallet.secret_seed, encryption_key))
+        source_keypair = Keypair.from_secret(raw_seed)
         # base_fee is a per-operation fee; do NOT multiply by recipient count.
         builder = TransactionBuilder(
             source_account=server.load_account(source_keypair.public_key),

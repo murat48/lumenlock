@@ -22,20 +22,35 @@ def execute_due_transfers():
     # from picking the same row. SQLite does not support skip_locked, so we fall
     # back to a plain select_for_update (still atomic, just not skip-locked).
     db_engine = settings.DATABASES.get('default', {}).get('ENGINE', '')
-    use_skip_locked = 'sqlite' not in db_engine
+    is_sqlite = 'sqlite' in db_engine
+    now = timezone.now()
 
-    with db_transaction.atomic():
-        qs = ScheduledTransfer.objects.filter(
-            status='pending',
-            scheduled_at__lte=timezone.now(),
-        )
-        if use_skip_locked:
-            qs = qs.select_for_update(skip_locked=True)
-        else:
-            qs = qs.select_for_update()
-        claimed_ids = list(qs.values_list('id', flat=True))
-        if claimed_ids:
-            ScheduledTransfer.objects.filter(id__in=claimed_ids).update(status='processing')
+    if is_sqlite:
+        # SQLite serializes all writes, so an atomic filter-then-update is safe
+        # without any row-level locking (which SQLite does not support at all).
+        with db_transaction.atomic():
+            claimed_ids = list(
+                ScheduledTransfer.objects.filter(
+                    status='pending',
+                    scheduled_at__lte=now,
+                ).values_list('id', flat=True)
+            )
+            if claimed_ids:
+                ScheduledTransfer.objects.filter(
+                    id__in=claimed_ids, status='pending'
+                ).update(status='processing')
+    else:
+        # PostgreSQL / MySQL: use select_for_update(skip_locked=True) so that
+        # concurrent scheduler instances each claim a disjoint set of rows.
+        with db_transaction.atomic():
+            claimed_ids = list(
+                ScheduledTransfer.objects.select_for_update(skip_locked=True).filter(
+                    status='pending',
+                    scheduled_at__lte=now,
+                ).values_list('id', flat=True)
+            )
+            if claimed_ids:
+                ScheduledTransfer.objects.filter(id__in=claimed_ids).update(status='processing')
 
     if not claimed_ids:
         return

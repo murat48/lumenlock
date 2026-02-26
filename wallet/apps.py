@@ -7,10 +7,16 @@ class WalletConfig(AppConfig):
 
     def ready(self):
         import os
-        # Only start the scheduler once: in the parent process (autoreload monitor)
-        # or in a non-autoreload environment (e.g. production/gunicorn).
-        # When autoreload is active Django sets RUN_MAIN='true' only in the child;
-        # the parent never sets it, so `not RUN_MAIN` is True only there.
-        if not os.environ.get('RUN_MAIN'):
+        # LUMENLOCK_RUN_SCHEDULER controls the in-process APScheduler:
+        #   '1'  – always start (use on exactly ONE process in production)
+        #   '0'  – never start
+        #  unset – dev-autoreload heuristic: start only in the parent process
+        #          (RUN_MAIN is set only in the reloader child, not the parent)
+        #
+        # In production set LUMENLOCK_RUN_SCHEDULER=0 on all worker processes
+        # and run the scheduler as a separate single process
+        # (or use Celery Beat instead).
+        scheduler_flag = os.environ.get('LUMENLOCK_RUN_SCHEDULER')
+        if scheduler_flag == '1' or (scheduler_flag is None and not os.environ.get('RUN_MAIN')):
             from . import scheduler
             scheduler.start()
