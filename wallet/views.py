@@ -73,7 +73,9 @@ def create_wallet(request):
 def check_balance(request):
     public_key = request.POST.get('public_key')
     if not public_key:
-        wallet = Wallet.objects.filter(user=request.user)[0]
+        wallet = Wallet.objects.filter(user=request.user).first()
+        if not wallet:
+            return JsonResponse({'status': 'error', 'message': 'Wallet not found'}, status=404)
         public_key = wallet.public_key
     server = Server("https://horizon-testnet.stellar.org")
     account = server.accounts().account_id(public_key).call()
@@ -88,7 +90,9 @@ def send_money(request):
         amount = data.get('amount')
         encryption_key = data.get('transaction_password')
         memo = data.get('memo', '').strip()
-        wallet = Wallet.objects.filter(user=request.user)[0]
+        wallet = Wallet.objects.filter(user=request.user).first()
+        if not wallet:
+            return JsonResponse({'status': 'error', 'message': 'Wallet not found'}, status=404)
         raw_seed = cryptocode.decrypt(wallet.secret_seed, encryption_key)
         if not raw_seed:
             return JsonResponse({'status': 'error', 'message': 'Wrong transaction password'}, status=400)
@@ -166,7 +170,7 @@ def bulk_send(request):
 
     wallet = Wallet.objects.filter(user=request.user).first()
     if not wallet:
-        return JsonResponse({'status': 'error', 'message': 'Wallet not found'})
+        return JsonResponse({'status': 'error', 'message': 'Wallet not found'}, status=404)
 
     raw_seed = cryptocode.decrypt(wallet.secret_seed, encryption_key)
     if not raw_seed:
@@ -233,7 +237,7 @@ def schedule_transfer(request):
 
     wallet = Wallet.objects.filter(user=request.user).first()
     if not wallet:
-        return JsonResponse({'status': 'error', 'message': 'Wallet not found'})
+        return JsonResponse({'status': 'error', 'message': 'Wallet not found'}, status=404)
 
     decrypted_seed = cryptocode.decrypt(wallet.secret_seed, encryption_key)
     if not decrypted_seed:

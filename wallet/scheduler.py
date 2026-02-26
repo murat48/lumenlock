@@ -55,7 +55,12 @@ def execute_due_transfers():
     if not claimed_ids:
         return
 
-    for transfer in ScheduledTransfer.objects.filter(id__in=claimed_ids):
+    # Re-filter by status='processing' AND id__in=claimed_ids so that we only
+    # execute transfers this instance actually claimed.  Using id__in alone would
+    # include rows that another concurrent process may have claimed first (their
+    # status would already be 'processing' or beyond, but the data could be
+    # mid-transition).  Filtering on both columns is the safe intersection.
+    for transfer in ScheduledTransfer.objects.filter(id__in=claimed_ids, status='processing'):
         try:
             # Recovery path: if a previous run submitted the transaction but
             # crashed before saving 'completed', tx_hash will already be set.
