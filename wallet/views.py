@@ -89,8 +89,11 @@ def send_money(request):
         encryption_key = data.get('transaction_password')
         memo = data.get('memo', '').strip()
         wallet = Wallet.objects.filter(user=request.user)[0]
+        raw_seed = cryptocode.decrypt(wallet.secret_seed, encryption_key)
+        if not raw_seed:
+            return JsonResponse({'status': 'error', 'message': 'Wrong transaction password'}, status=400)
         server = Server("https://horizon-testnet.stellar.org")
-        source_keypair = Keypair.from_secret(cryptocode.decrypt(wallet.secret_seed, encryption_key))
+        source_keypair = Keypair.from_secret(raw_seed)
         builder = TransactionBuilder(
             source_account=server.load_account(source_keypair.public_key),
             network_passphrase=Network.TESTNET_NETWORK_PASSPHRASE,
@@ -234,7 +237,7 @@ def schedule_transfer(request):
 
     decrypted_seed = cryptocode.decrypt(wallet.secret_seed, encryption_key)
     if not decrypted_seed:
-        return JsonResponse({'status': 'error', 'message': 'Wrong transaction password'})
+        return JsonResponse({'status': 'error', 'message': 'Wrong transaction password'}, status=400)
 
     scheduled_at = parse_datetime(scheduled_at_str)
     if not scheduled_at:

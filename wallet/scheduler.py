@@ -57,6 +57,15 @@ def execute_due_transfers():
 
     for transfer in ScheduledTransfer.objects.filter(id__in=claimed_ids):
         try:
+            # Recovery path: if a previous run submitted the transaction but
+            # crashed before saving 'completed', tx_hash will already be set.
+            # Skip re-submission to prevent a double-send.
+            if transfer.tx_hash:
+                transfer.status = 'completed'
+                transfer.save(update_fields=['status'])
+                logger.info(f'Scheduled transfer {transfer.id} recovered from prior submit (hash={transfer.tx_hash}).')
+                continue
+
             raw_seed = cryptocode.decrypt(transfer.encrypted_seed, settings.SECRET_KEY[:32])
             if not raw_seed:
                 raise ValueError('Failed to decrypt seed')
@@ -79,10 +88,16 @@ def execute_due_transfers():
 
             transaction = builder.build()
             transaction.sign(source_keypair)
-            server.submit_transaction(transaction)
+            response = server.submit_transaction(transaction)
+
+            # Persist the tx_hash BEFORE marking completed.  If the process
+            # crashes between these two saves the next scheduler run will see
+            # tx_hash is set and skip re-submission, then mark completed.
+            transfer.tx_hash = response.get('hash', '')
+            transfer.save(update_fields=['tx_hash'])
 
             transfer.status = 'completed'
-            logger.info(f'Scheduled transfer {transfer.id} completed successfully.')
+            logger.info(f'Scheduled transfer {transfer.id} completed successfully (hash={transfer.tx_hash}).') 
         except Exception as e:
             transfer.status = 'failed'
             logger.error(f'Scheduled transfer {transfer.id} failed: {e}')
