@@ -32,7 +32,9 @@ def _stellar_amount(value):
     quantized = d.quantize(Decimal('0.0000001'), rounding=ROUND_DOWN)
     if quantized <= 0:
         raise ValueError('Amount is too small (minimum 0.0000001 XLM)')
-    return str(quantized)
+    # Format as fixed-point (never scientific notation) with no trailing zeros.
+    # Stellar SDK rejects 1E-7; we must send 0.0000001.
+    return format(quantized, 'f').rstrip('0').rstrip('.') or '0'
 
 
 def _truncate_memo_bytes(memo, max_bytes=28):

@@ -26,6 +26,18 @@ def execute_due_transfers():
     is_sqlite = 'sqlite' in db_engine
     now = timezone.now()
 
+    # Recovery: revert any transfers stuck in 'processing' for over 1 hour back
+    # to 'pending' so they can be retried.  This handles scheduler crashes that
+    # occurred after claiming but before completion/failure.
+    from datetime import timedelta
+    stale_threshold = now - timedelta(hours=1)
+    stale_count = ScheduledTransfer.objects.filter(
+        status='processing',
+        updated_at__lt=stale_threshold,
+    ).update(status='pending', celery_task_id='')
+    if stale_count:
+        logger.warning(f'Reverted {stale_count} stale processing transfers to pending.')
+
     if is_sqlite:
         # SQLite serialises writes, but claimed_ids would be the same for two
         # concurrent readers if they both read before either updates.  Using a

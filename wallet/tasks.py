@@ -14,7 +14,7 @@ def _server_decrypt(enc):
     return cryptocode.decrypt(enc, settings.SECRET_KEY[:32])
 
 
-@shared_task(bind=True, max_retries=3)
+@shared_task(bind=True, max_retries=3, acks_late=True, reject_on_worker_lost=True)
 def execute_scheduled_transfer(self, transfer_id):
     from .models import ScheduledTransfer
 
