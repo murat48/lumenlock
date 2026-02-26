@@ -90,6 +90,12 @@ def send_money(request):
         amount = data.get('amount')
         encryption_key = data.get('transaction_password')
         memo = data.get('memo', '').strip()
+        if not destination_public_key or not StrKey.is_valid_ed25519_public_key(str(destination_public_key)):
+            return JsonResponse({'status': 'error', 'message': 'Invalid recipient Stellar address'}, status=400)
+        try:
+            amount_str = _stellar_amount(amount)
+        except ValueError as e:
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
         wallet = Wallet.objects.filter(user=request.user).first()
         if not wallet:
             return JsonResponse({'status': 'error', 'message': 'Wallet not found'}, status=404)
@@ -104,7 +110,7 @@ def send_money(request):
             base_fee=100
         ).append_payment_op(
             destination=destination_public_key,
-            amount=amount,
+            amount=amount_str,
             asset=Asset.native()
         ).set_timeout(30)
         if memo:
